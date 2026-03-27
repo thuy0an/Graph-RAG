@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 
 from langchain_core.documents import Document
 
@@ -18,7 +19,6 @@ from app.core.providers import get_llm
 
 # ── prompts ───────────────────────────────────────────────────────────────────
 
-# Combined prompt: extract entities + summary in ONE LLM call per section
 _SECTION_EXTRACT_PROMPT = """Analyze the following text and return a JSON object with:
 1. "title": short section title (max 8 words)
 2. "summary": concise summary (2-3 sentences)
@@ -128,31 +128,61 @@ def build_lexical_graph(chunks: list[Document], filename: str) -> dict:
     )
     from app.core.providers import get_embeddings
 
+    t_total_start = time.perf_counter()
+
     embeddings_model = get_embeddings()
     doc_id = _uid(filename)
     section_groups = _group_into_sections(chunks)
 
-    # ── OPTIMIZATION 1: Batch embed all chunks at once ────────────────────────
-    print(f"  [embed] Embedding {len(chunks)} chunks in batch...")
+    print(f"\n{'='*60}")
+    print(f"  GRAPH BUILDER")
+    print(f"{'='*60}")
+    print(f"  File     : {filename}")
+    print(f"  Chunks   : {len(chunks)}")
+    print(f"  Sections : {len(section_groups)}  ({_CHUNKS_PER_SECTION} chunks/section)")
+    print(f"  LLM calls: ~{len(section_groups) + 1} total  ({len(section_groups)} sections + 1 doc summary)")
+
+    # ── STEP 1: Batch embed ───────────────────────────────────────────────────
+    print(f"\n  [1/3] Batch Embedding")
+    t0 = time.perf_counter()
     all_texts = [c.page_content for c in chunks]
     all_embeddings = embeddings_model.embed_documents(all_texts)
-    # Map chunk_index → embedding
+    t_embed = time.perf_counter() - t0
+
     chunk_embeddings: dict[int, list[float]] = {
         c.metadata.get("chunk_index", i): all_embeddings[i]
         for i, c in enumerate(chunks)
     }
-    print(f"  [embed] Done.")
+    embed_dim = len(all_embeddings[0]) if all_embeddings else 0
+    print(f"        Embedded : {len(all_embeddings)} chunks")
+    print(f"        Dimension: {embed_dim}")
+    print(f"        Time     : {t_embed:.3f}s  ({t_embed/len(chunks)*1000:.1f}ms/chunk avg)")
 
+    # ── STEP 2: Section extraction (LLM) ─────────────────────────────────────
+    print(f"\n  [2/3] Section Extraction (LLM)")
     section_summaries: list[str] = []
     all_section_ids: list[str] = []
     total_entities = 0
+    total_relations = 0
+    t_llm_sections = 0.0
 
     for sec_idx, sec_chunks in enumerate(section_groups):
         sec_text = "\n\n".join(c.page_content for c in sec_chunks)
 
-        # ── OPTIMIZATION 2: One LLM call per section ─────────────────────────
-        print(f"  [llm] Section {sec_idx + 1}/{len(section_groups)}: extracting...")
+        t0 = time.perf_counter()
         sec_data = _extract_section(sec_text)
+        t_sec = time.perf_counter() - t0
+        t_llm_sections += t_sec
+
+        n_ent = len(sec_data["entities"])
+        n_rel = len(sec_data["relations"])
+        total_entities += n_ent
+        total_relations += n_rel
+
+        print(f"        Section {sec_idx+1:2d}/{len(section_groups)}"
+              f"  title={sec_data['title'][:35]!r}"
+              f"  entities={n_ent}  relations={n_rel}"
+              f"  ({t_sec:.2f}s)")
 
         title   = sec_data["title"]
         summary = sec_data["summary"]
@@ -172,7 +202,6 @@ def build_lexical_graph(chunks: list[Document], filename: str) -> dict:
         if sec_idx > 0:
             link_sections(all_section_ids[sec_idx - 1], section_id)
 
-        # Persist chunks (embeddings already computed)
         prev_chunk_id: str | None = None
         for chunk in sec_chunks:
             chunk_idx = chunk.metadata.get("chunk_index", 0)
@@ -192,12 +221,9 @@ def build_lexical_graph(chunks: list[Document], filename: str) -> dict:
                 link_chunks(prev_chunk_id, chunk_id)
             prev_chunk_id = chunk_id
 
-        # Persist entities + relations from this section
-        total_entities += len(sec_data["entities"])
         for ent in sec_data["entities"]:
             eid = _uid(ent["name"])
             upsert_entity(eid, ent["name"], ent["type"])
-            # Link all chunks in section to entities
             for chunk in sec_chunks:
                 chunk_id = _uid(doc_id, str(chunk.metadata.get("chunk_index", 0)))
                 link_chunk_entity(chunk_id, eid)
@@ -209,13 +235,40 @@ def build_lexical_graph(chunks: list[Document], filename: str) -> dict:
             upsert_entity(tgt_id, obj)
             link_entities(src_id, tgt_id, label)
 
-    # ── OPTIMIZATION 3: One doc summary call ─────────────────────────────────
-    print(f"  [llm] Generating document summary...")
+    print(f"\n        Subtotal entities : {total_entities}")
+    print(f"        Subtotal relations: {total_relations}")
+    print(f"        LLM time (sections): {t_llm_sections:.2f}s  ({t_llm_sections/len(section_groups):.2f}s/section avg)")
+
+    # ── STEP 3: Document summary ──────────────────────────────────────────────
+    print(f"\n  [3/3] Document Summary (LLM)")
+    t0 = time.perf_counter()
     doc_summary = _doc_summary(section_summaries)
+    t_doc = time.perf_counter() - t0
+
     upsert_document(doc_id=doc_id, filename=filename, summary=doc_summary)
+    print(f"        Summary  : {doc_summary[:120]}...")
+    print(f"        Time     : {t_doc:.2f}s")
+
+    # ── Final stats ───────────────────────────────────────────────────────────
+    t_total = time.perf_counter() - t_total_start
+    print(f"\n{'─'*60}")
+    print(f"  GRAPH BUILD COMPLETE")
+    print(f"{'─'*60}")
+    print(f"  Chunks    : {len(chunks)}")
+    print(f"  Sections  : {len(section_groups)}")
+    print(f"  Entities  : {total_entities}")
+    print(f"  Relations : {total_relations}")
+    print(f"  Embed time: {t_embed:.2f}s")
+    print(f"  LLM time  : {t_llm_sections + t_doc:.2f}s  ({len(section_groups)+1} calls)")
+    print(f"  Total time: {t_total:.2f}s")
+    print(f"{'='*60}\n")
 
     return {
-        "chunks":   len(chunks),
-        "entities": total_entities,
-        "sections": len(section_groups),
+        "chunks":    len(chunks),
+        "sections":  len(section_groups),
+        "entities":  total_entities,
+        "relations": total_relations,
+        "time_embed_s": round(t_embed, 2),
+        "time_llm_s":   round(t_llm_sections + t_doc, 2),
+        "time_total_s": round(t_total, 2),
     }

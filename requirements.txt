@@ -1,27 +1,46 @@
-# Core
-fastapi
-uvicorn
-langchain
-langchain-community
-langchain-core
-python-multipart
-pydantic
-pydantic-settings
-python-dotenv
-httpx
+# API
+fastapi==0.135.2
+uvicorn==0.42.0
+python-multipart==0.0.22
+httpx==0.28.1
+
+# LangChain
+langchain==1.2.13
+langchain-core==1.2.22
+langchain-community==0.4.1
+langchain-text-splitters==1.1.1
+langchain-ollama==1.0.1
+langchain-openai==1.1.12
+langchain-groq==1.1.2
+langchain-anthropic==1.4.0
+
+# LLM providers
+ollama==0.6.1
+openai==2.29.0
+groq==0.37.1
+anthropic==0.86.0
+
+# Graph DB
+neo4j==6.1.0
 
 # Document loaders
-pypdf
-docx2txt
+PyMuPDF==1.27.2.2
+docx2txt==0.9
 
-# Neo4j
-neo4j
+# Embeddings / ML
+sentence-transformers==5.3.0
+faiss-cpu==1.13.2
+scikit-learn==1.8.0
+numpy==2.4.3
+torch==2.11.0
 
-# LLM Providers (install only what you need)
-langchain-ollama
-langchain-openai
-langchain-groq
-langchain-anthropic
-langchain-huggingface
-langchain-text-splitters
-sentence-transformers
+# Research / Visualization
+matplotlib==3.10.8
+networkx==3.6.1
+scipy==1.17.1
+
+# Config / Utils
+pydantic==2.12.5
+pydantic-settings==2.13.1
+python-dotenv==1.2.2
+tiktoken==0.12.0

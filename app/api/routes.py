@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 from pathlib import Path
 
@@ -30,7 +31,9 @@ async def upload_file(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, f)
 
     try:
-        stats = process_file(file_path)
+        # Run in thread pool — tránh block event loop khi file lớn
+        loop = asyncio.get_event_loop()
+        stats = await loop.run_in_executor(None, process_file, file_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -45,7 +48,8 @@ async def upload_file(file: UploadFile = File(...)):
 @router.post("/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
     try:
-        answer, sources = rag_query(request.question)
+        loop = asyncio.get_event_loop()
+        answer, sources = await loop.run_in_executor(None, rag_query, request.question)
         return QueryResponse(answer=answer, sources=sources)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

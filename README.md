@@ -1,99 +1,98 @@
 # Graph RAG — Hierarchical Lexical Graph
 
-He thong hoi dap tai lieu thong minh — ban upload file PDF/DOCX, dat cau hoi bang ngon ngu tu nhien, he thong tim kiem va tra loi dua tren noi dung tai lieu do.
+Hệ thống hỏi đáp tài liệu thông minh — bạn upload file PDF/DOCX, đặt câu hỏi bằng ngôn ngữ tự nhiên, hệ thống tìm kiếm và trả lời dựa trên nội dung tài liệu đó.
 
-Diem khac biet so voi chatbot thong thuong: he thong khong chi tim doan van giong cau hoi, ma con **hieu quan he giua cac khai niem** trong tai lieu thong qua Knowledge Graph.
+Điểm khác biệt so với chatbot thông thường: hệ thống không chỉ tìm đoạn văn giống câu hỏi, mà còn **hiểu quan hệ giữa các khái niệm** trong tài liệu thông qua Knowledge Graph.
 
 ![Pipeline](figures/01_pipeline.png)
 
 **(a) Indexing — khi upload file:**
-Tai lieu duoc doc va cat thanh cac doan nho (chunks, ~800 ky tu moi doan). Moi doan duoc chuyen thanh vector so (embedding) de may tinh co the so sanh do tuong dong. Sau do, AI doc tung nhom doan va tu dong rut trich ra cac thuc the (nguoi, to chuc, khai niem, ky nang...) cung quan he giua chung. Toan bo duoc luu vao Neo4j duoi dang do thi phan cap: Document -> Section -> Chunk -> Entity.
+Tài liệu được đọc và cắt thành các đoạn nhỏ (chunks, ~800 ký tự mỗi đoạn). Mỗi đoạn được chuyển thành vector số (embedding) để máy tính có thể so sánh độ tương đồng. Sau đó, AI đọc từng nhóm đoạn và tự động rút trích ra các thực thể (người, tổ chức, khái niệm, kỹ năng...) cùng quan hệ giữa chúng. Toàn bộ được lưu vào Neo4j dưới dạng đồ thị phân cấp: Document -> Section -> Chunk -> Entity.
 
-**(b) Querying — khi dat cau hoi:**
-Cau hoi duoc chuyen thanh vector roi tim cac doan van tuong tu nhat (vector search). Dong thoi, AI nhan dien cac thuc the trong cau hoi va duyet do thi de tim cac quan he lien quan (graph traversal). Ket qua tu ca hai nguon duoc gop lai thanh context 4 tang roi dua cho LLM sinh cau tra loi cuoi cung.
+**(b) Querying — khi đặt câu hỏi:**
+Câu hỏi được chuyển thành vector rồi tìm các đoạn văn tương tự nhất (vector search). Đồng thời, AI nhận diện các thực thể trong câu hỏi và duyệt đồ thị để tìm các quan hệ liên quan (graph traversal). Kết quả từ cả hai nguồn được gộp lại thành context 4 tầng rồi đưa cho LLM sinh câu trả lời cuối cùng.
 
 ---
 
-## Tai sao can Graph RAG?
+## Tại sao cần Graph RAG?
 
-Hay tuong tuong ban co mot tai lieu ky thuat day 200 trang. Neu hoi *"Java lien quan den Spring Boot nhu the nao?"*, RAG thong thuong chi tim cac doan co chua tu "Java" hoac "Spring Boot" — nhung khong biet rang Spring Boot **phu thuoc vao** Java, hay Java **la nen tang cua** Spring Boot.
+Hãy tưởng tượng bạn có một tài liệu kỹ thuật dày 200 trang. RAG thông thường chỉ tìm các đoạn có chứa từ "Java" hoặc "Spring Boot" — nhưng không biết rằng Spring Boot **phụ thuộc vào** Java, hay Java **là nền tảng của** Spring Boot.
 
-Graph RAG giai quyet dieu do:
+Graph RAG giải quyết:
 
-| Loai cau hoi | RAG thuong | Graph RAG |
+| Loại câu hỏi | RAG thường | Graph RAG |
 |---|---|---|
-| "X la gi?" | Tot | Tot |
-| "X va Y lien quan the nao?" | Kem | Tot (graph traversal) |
-| "Tom tat toan bo tai lieu" | Kem | Tot (document summary) |
-| "Nhung khai niem nao lien quan den X?" | Kem | Tot (multi-hop) |
+| "X là gì?" | Tốt | Tốt |
+| "X và Y liên quan thế nào?" | Kém | Tốt (graph traversal) |
+| "Tóm tắt toàn bộ tài liệu" | Kém | Tốt (document summary) |
+| "Những khái niệm nào liên quan đến X?" | Kém | Tốt (multi-hop) |
 
 ![Comparison](figures/05_comparison.png)
 
-**(Trai) Naive RAG** — quy trinh don gian: chia chunks -> embed -> tim chunks giong cau hoi -> dua cho LLM. Khong co graph, khong co hierarchy, chi co flat retrieval.
+**(Trái) Naive RAG** — quy trình đơn giản: chia chunks -> embed -> tìm chunks giống câu hỏi -> đưa cho LLM. Không có graph, không có hierarchy, chỉ có flat retrieval.
 
-**(Giua) Graph RAG (du an nay)** — bo sung them: entity extraction (AI tu rut trich thuc the), section summarization (tom tat tung nhom doan), Neo4j Hierarchical Graph (luu ca vector lan graph trong 1 database), hybrid retrieval (ket hop vector search + Cypher graph traversal).
+**(Giữa) Graph RAG (dự án này)** — bổ sung thêm: entity extraction (AI tự rút trích thực thể), section summarization (tóm tắt từng nhóm đoạn), Neo4j Hierarchical Graph (lưu cả vector lẫn graph trong 1 database), hybrid retrieval (kết hợp vector search + Cypher graph traversal).
 
-**(Phai) Feature table** — so sanh truc tiep 13 tieu chi. Cac o xanh la tinh nang Graph RAG co ma Naive RAG khong co: entity relationships, knowledge graph, graph traversal, section summaries, document summary, hierarchical context, multi-hop reasoning, relationship-aware retrieval. Context layers: 1 (Naive) vs 4 (Graph RAG).
+**(Phải) Feature table** — so sánh trực tiếp 13 tiêu chí. Các ô xanh là tính năng Graph RAG có mà Naive RAG không có: entity relationships, knowledge graph, graph traversal, section summaries, document summary, hierarchical context, multi-hop reasoning, relationship-aware retrieval. Context layers: 1 (Naive) vs 4 (Graph RAG).
 
 ---
 
-## Kien truc do thi
+## Kiến trúc đồ thị
 
-Tai lieu duoc to chuc thanh 4 tang trong Neo4j:
+Tài liệu được tổ chức thành 4 tầng trong Neo4j:
 
 ```
-(:Document {summary})              <- tom tat toan bo tai lieu
+(:Document {summary})              <- tóm tắt toàn bộ tài liệu
       | HAS_SECTION
       v
-(:Section {title, summary})        <- nhom 6 chunks, co tieu de + tom tat
-      --NEXT_SECTION--> (:Section)  <- lien ket tuan tu giua cac section
+(:Section {title, summary})        <- nhóm 6 chunks, có tiêu đề + tóm tắt
+      --NEXT_SECTION--> (:Section)  <- liên kết tuần tự giữa các section
       | HAS_CHUNK
       v
-(:Chunk {text, embedding})         <- doan van goc + vector 768 chieu
-      --NEXT_CHUNK----> (:Chunk)    <- lien ket tuan tu giua cac chunk
+(:Chunk {text, embedding})         <- đoạn văn gốc + vector 768 chiều
+      --NEXT_CHUNK----> (:Chunk)    <- liên kết tuần tự giữa các chunk
       | MENTIONS
       v
-(:Entity {name, type})             <- thuc the: PERSON/ORG/CONCEPT/SKILL/PLACE
-      --RELATED_TO {relation}--> (:Entity)  <- quan he co nhan giua cac thuc the
+(:Entity {name, type})             <- thực thể: PERSON/ORG/CONCEPT/SKILL/PLACE
+      --RELATED_TO {relation}--> (:Entity)  <- quan hệ có nhãn giữa các thực thể
 ```
 
-Khi tra loi cau hoi, LLM nhan context tu ca 4 tang cung luc — nen tra loi tot ca cau hoi tong quan lan cau hoi chi tiet.
+Khi trả lời câu hỏi, LLM nhận context từ cả 4 tầng cùng lúc — nên trả lời tốt cả câu hỏi tổng quan lẫn câu hỏi chi tiết.
 
 ---
 
-## Benchmark thuc te
+## Benchmark thực tế
 
-Do tren file PDF 1,446 KB — Java Interview Guide (250+ cau hoi phong van):
+Đo trên file PDF 1,446 KB — Java Interview Guide (250+ câu hỏi phỏng vấn):
 
-| Buoc | Thoi gian | Ghi chu |
+| Bước | Thời gian | Ghi chú |
 |------|-----------|---------|
-| Chunking | 1.1s | Cat 936 chunks, avg 628 ky tu/chunk |
-| Embedding batch | 17.8s | 936 chunks x 768 chieu, 1 lan goi duy nhat |
-| LLM extract (156 sections) | ~6,220s | ~40s/section voi Ollama local |
-| Doc summary | 6.6s | 1 LLM call tong hop toan bo |
+| Chunking | 1.1s | Cắt 936 chunks, avg 628 ký tự/chunk |
+| Embedding batch | 17.8s | 936 chunks x 768 chiều, 1 lần gọi duy nhất |
+| LLM extract (156 sections) | ~6,220s | ~40s/section với Ollama local |
+| Doc summary | 6.6s | 1 LLM call tổng hợp toàn bộ |
 | Neo4j write | ~11.2s | Ghi nodes + edges + vector index |
-| **Tong** | **~104 phut** | Ollama local. Groq: ~5-7 phut |
+| **Tổng** | **~104 phút** | Ollama local. Groq: ~5-7 phút |
 
-Ket qua graph sau khi index:
+Kết quả graph sau khi index:
 - Chunks: 936 · Sections: 156 · LLM calls: 157
-- Entities trung binh: 10.0/section · Relations: 9.2/section
-- Tokens xu ly uoc tinh: ~117,750
+- Entities trung bình: 10.0/section · Relations: 9.2/section
+- Tokens xử lý ước tính: ~117,750
 
-> LLM extraction chiem ~99% thoi gian. Dung Groq (mien phi, co rate limit) nhanh hon Ollama local ~15-20 lan.
 
 ![Timing](figures/02_timing.png)
 
-**(a) Bar chart thoi gian tung buoc** — thay ro LLM extraction la bottleneck chinh. Embedding va chunking gan nhu tuc thi so voi LLM.
+**(a) Bar chart thời gian từng bước** — thấy rõ LLM extraction là bottleneck chính. Embedding và chunking gần như tức thì so với LLM.
 
-**(b) Pie chart phan bo thoi gian** — truc quan hoa ti le: LLM chiem gan nhu toan bo banh.
+**(b) Pie chart phân bổ thời gian** — trực quan hóa tỉ lệ: LLM chiếm gần như toàn bộ bánh.
 
-**(c) LLM time per section** — thoi gian tung LLM call trong sample 5 sections. Moi call xu ly ~3,000 ky tu text va tra ve JSON chua entities + relations + title + summary. Trung binh ~40s/section voi Ollama, ~2-3s voi Groq.
+**(c) LLM time per section** — thời gian từng LLM call trong sample 5 sections. Mỗi call xử lý ~3,000 ký tự text và trả về JSON chứa entities + relations + title + summary. Trung bình ~40s/section với Ollama, ~2-3s với Groq.
 
-**(d) Chunk length distribution** — histogram do dai cac chunks. Mean/Median/P10/P90 cho thay chunks kha dong deu, it outlier — chunking strategy hoat dong tot.
+**(d) Chunk length distribution** — histogram độ dài các chunks. Mean/Median/P10/P90 cho thấy chunks khá đồng đều, ít outlier — chunking strategy hoạt động tốt.
 
-**(e) Entities & relations per section** — so thuc the va quan he LLM rut trich duoc tu moi section trong sample. Avg 10 entities va 9.2 relations/section, uoc tinh ~1,560 entities va ~1,435 relations cho toan bo tai lieu.
+**(e) Entities & relations per section** — số thực thể và quan hệ LLM rút trích được từ mỗi section trong sample. Avg 10 entities và 9.2 relations/section, ước tính ~1,560 entities và ~1,435 relations cho toàn bộ tài liệu.
 
-**(f) Summary table** — bang tong hop toan bo so lieu pipeline: file size, chunks, sections, LLM calls, tokens, timing tung buoc.
+**(f) Summary table** — bảng tổng hợp toàn bộ số liệu pipeline: file size, chunks, sections, LLM calls, tokens, timing từng bước.
 
 ---
 
@@ -101,54 +100,54 @@ Ket qua graph sau khi index:
 
 ![Graph](figures/03_graph.png)
 
-**(a) Full entity graph** — toan bo entities va relations duoc extract tu tai lieu. Node size ti le voi degree (so ket noi) — node to hon = thuc the quan trong hon, xuat hien nhieu hon. Mau sac phan biet loai entity: xanh duong = PERSON, xanh la = ORG, tim = CONCEPT, vang = SKILL, do = PLACE, xam = OTHER. Chi hien thi label cho top-20 nodes co degree cao nhat de tranh roi.
+**(a) Full entity graph** — toàn bộ entities và relations được extract từ tài liệu. Node size tỉ lệ với degree (số kết nối) — node to hơn = thực thể quan trọng hơn, xuất hiện nhiều hơn. Màu sắc phân biệt loại entity: xanh dương = PERSON, xanh lá = ORG, tím = CONCEPT, vàng = SKILL, đỏ = PLACE, xám = OTHER. Chỉ hiển thị label cho top-20 nodes có degree cao nhất để tránh rối.
 
-**(b) Ego graph** — zoom vao entity trung tam nhat (degree cao nhat), hien thi tat ca nodes trong ban kinh 2 buoc. Cac canh co nhan quan he cu the (vi du: "is_used_in", "extends", "implements"). Day la cach he thong "nhin thay" quan he khi tra loi cau hoi ve entity do.
+**(b) Ego graph** — zoom vào entity trung tâm nhất (degree cao nhất), hiển thị tất cả nodes trong bán kính 2 bước. Các cạnh có nhãn quan hệ cụ thể (ví dụ: "is_used_in", "extends", "implements"). Đây là cách hệ thống "nhìn thấy" quan hệ khi trả lời câu hỏi về entity đó.
 
-**(c) Entity type distribution** — so luong tung loai entity. Tai lieu ky thuat thuong co nhieu CONCEPT va SKILL hon PERSON hay PLACE.
+**(c) Entity type distribution** — số lượng từng loại entity. Tài liệu kỹ thuật thường có nhiều CONCEPT và SKILL hơn PERSON hay PLACE.
 
-**(d) Degree distribution** — phan bo so ket noi cua cac nodes. Dang power-law (duoi dai ben phai) la binh thuong voi knowledge graph: phan lon entities it ket noi, mot so it hub nodes ket noi rat nhieu.
+**(d) Degree distribution** — phân bổ số kết nối của các nodes. Dạng power-law (đuôi dài bên phải) là bình thường với knowledge graph: phần lớn entities ít kết nối, một số ít hub nodes kết nối rất nhiều.
 
-**(e) Stats table** — tong hop: so documents/sections/chunks/entities/relations, avg degree, graph density, top 5 relation types, top 5 entities theo degree.
+**(e) Stats table** — tổng hợp: số documents/sections/chunks/entities/relations, avg degree, graph density, top 5 relation types, top 5 entities theo degree.
 
 ---
 
 ## Embedding Space
 
-Embedding la cach bieu dien text thanh vector so (768 chieu) de may tinh co the do do tuong dong. Hai doan van co nghia gan nhau -> vector gan nhau -> cosine similarity cao (gan 1.0). Hai doan hoan toan khac chu de -> cosine similarity thap (gan 0).
+Embedding là cách biểu diễn text thành vector số (768 chiều) để máy tính có thể đo độ tương đồng. Hai đoạn văn có nghĩa gần nhau → vector gần nhau → cosine similarity cao (gần 1.0). Hai đoạn hoàn toàn khác chủ đề → cosine similarity thấp (gần 0).
 
 ![Similarity](figures/04_similarity.png)
 
-**(a) Cosine similarity matrix** — heatmap mau sac the hien do tuong dong giua tat ca cap chunks (0 = hoan toan khac, 1 = giong het). Duong cheo = 1.0 (chunk so voi chinh no). Off-diagonal mean ~0.56 cho thay cac chunks co do da dang tot. Neu mean qua cao (>0.9) nghia la tai lieu lap lai nhieu; qua thap (<0.3) nghia la tai lieu rat da dang chu de.
+**(a) Cosine similarity matrix** — heatmap màu sắc thể hiện độ tương đồng giữa tất cả cặp chunks (0 = hoàn toàn khác, 1 = giống hệt). Đường chéo = 1.0 (chunk so với chính nó). Off-diagonal mean ~0.56 cho thấy các chunks có độ đa dạng tốt. Nếu mean quá cao (>0.9) nghĩa là tài liệu lặp lại nhiều; quá thấp (<0.3) nghĩa là tài liệu rất đa dạng chủ đề.
 
-**(b) Query-chunk similarity** — diem cosine cua 3 cau hoi mau voi tung chunk. Duong dut do (0.7) la nguong "relevant", duong dut xam (0.5) la nguong "co the lien quan". Chunks vuot nguong 0.7 se duoc uu tien dua vao context khi tra loi.
+**(b) Query-chunk similarity** — điểm cosine của 3 câu hỏi mẫu với từng chunk. Đường đứt đỏ (0.7) là ngưỡng "relevant", đường đứt xám (0.5) là ngưỡng "có thể liên quan". Chunks vượt ngưỡng 0.7 sẽ được ưu tiên đưa vào context khi trả lời.
 
-**(c) Top-K retrieved chunks** — voi 1 cau hoi cu the, day la top-5 chunks duoc chon kem score chinh xac. Mau xanh >=0.7 (highly relevant), vang >=0.5 (relevant), do <0.5 (low confidence). Giup debug xem he thong dang retrieve dung khong.
+**(c) Top-K retrieved chunks** — với 1 câu hỏi cụ thể, đây là top-5 chunks được chọn kèm score chính xác. Màu xanh ≥0.7 (highly relevant), vàng ≥0.5 (relevant), đỏ <0.5 (low confidence). Giúp debug xem hệ thống đang retrieve đúng không.
 
-**(d) PCA projection** — chieu 768 chieu xuong 2 chieu bang PCA (giu lai huong co variance lon nhat). Mau gradient theo chunk index (thu tu trong tai lieu). Cac chunks gan nhau trong khong gian 2D co embedding tuong tu nhau. PC1 va PC2 cho biet % thong tin duoc giu lai sau khi giam chieu.
+**(d) PCA projection** — chiếu 768 chiều xuống 2 chiều bằng PCA (giữ lại hướng có variance lớn nhất). Màu gradient theo chunk index (thứ tự trong tài liệu). Các chunks gần nhau trong không gian 2D có embedding tương tự nhau. PC1 và PC2 cho biết % thông tin được giữ lại sau khi giảm chiều.
 
-**(e) t-SNE projection** — phuong phap giam chieu khac, tot hon PCA trong viec giu cau truc cuc bo. Cac cum (clusters) trong bieu do la cac nhom chunks co noi dung tuong tu nhau ve mat ngu nghia — du chung co the o cac trang khac nhau trong tai lieu.
+**(e) t-SNE projection** — phương pháp giảm chiều khác, tốt hơn PCA trong việc giữ cấu trúc cục bộ. Các cụm (clusters) trong biểu đồ là các nhóm chunks có nội dung tương tự nhau về mặt ngữ nghĩa — dù chúng có thể ở các trang khác nhau trong tài liệu.
 
-**(f) Pairwise similarity distribution** — histogram toan bo cap chunks. Duong dut P90 cho biet 90% cap chunks co similarity thap hon gia tri do. Dung de chon nguong retrieval phu hop: neu dat threshold qua cao se miss nhieu chunks lien quan, qua thap se dua vao qua nhieu noise.
+**(f) Pairwise similarity distribution** — histogram toàn bộ cặp chunks. Đường đứt P90 cho biết 90% cặp chunks có similarity thấp hơn giá trị đó. Dùng để chọn ngưỡng retrieval phù hợp: nếu đặt threshold quá cao sẽ miss nhiều chunks liên quan, quá thấp sẽ đưa vào quá nhiều noise.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Vai tro |
+| Layer | Technology | Vai trò |
 |-------|-----------|---------|
-| Backend | FastAPI + Uvicorn | REST API, xu ly upload va query |
-| Graph DB | Neo4j 5.11+ | Luu graph + vector index trong 1 database |
-| LLM | Ollama / Groq / OpenAI / Anthropic | Extract entities, sinh summary, tra loi |
-| Embedding | nomic-embed-text (dim=768) | Chuyen text thanh vector |
-| Orchestration | LangChain | Abstraction layer cho LLM va embeddings |
-| Frontend | Vanilla HTML/JS | Chat UI don gian |
+| Backend | FastAPI + Uvicorn | REST API, xử lý upload và query |
+| Graph DB | Neo4j 5.11+ | Lưu graph + vector index trong 1 database |
+| LLM | Ollama / Groq / OpenAI / Anthropic | Extract entities, sinh summary, trả lời |
+| Embedding | nomic-embed-text (dim=768) | Chuyển text thành vector |
+| Orchestration | LangChain | Abstraction layer cho LLM và embeddings |
+| Frontend | Vanilla HTML/JS | Chat UI đơn giản |
 
-Toan bo stack co the chay **hoan toan local va mien phi** voi Ollama.
+Toàn bộ stack có thể chạy **hoàn toàn local và miễn phí** với Ollama.
 
 ---
 
-## Cai dat
+## Cài đặt
 
 **1. Neo4j (Docker):**
 ```bash
@@ -183,88 +182,71 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=password
 ```
 
-Muon nhanh hon voi file lon, doi sang Groq (mien phi, can API key tai console.groq.com):
+Muốn nhanh hơn với file lớn, đổi sang Groq (miễn phí, cần API key tại console.groq.com):
 ```env
 LLM_PROVIDER=groq
 GROQ_MODEL=llama-3.1-8b-instant
 GROQ_API_KEY=your_key_here
 ```
 
-**4. Chay:**
+**4. Chạy:**
 ```bash
 .venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Mo `ui.html` trong browser. API docs: http://127.0.0.1:8000/docs
+Mở `ui.html` trong browser. API docs: http://127.0.0.1:8000/docs
 
 ---
 
 ## API
 
-| Method | Endpoint | Mo ta |
+| Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/api/upload` | Upload + index tai lieu vao Neo4j |
-| `POST` | `/api/query` | Dat cau hoi, nhan cau tra loi + sources |
-| `GET` | `/api/files` | Danh sach tai lieu da index |
-| `DELETE` | `/api/files/{filename}` | Xoa tai lieu khoi Neo4j + disk |
-| `GET` | `/health` | Trang thai server + Neo4j connection |
+| `POST` | `/api/upload` | Upload + index tài liệu vào Neo4j |
+| `POST` | `/api/query` | Đặt câu hỏi, nhận câu trả lời + sources |
+| `GET` | `/api/files` | Danh sách tài liệu đã index |
+| `DELETE` | `/api/files/{filename}` | Xóa tài liệu khỏi Neo4j + disk |
+| `GET` | `/health` | Trạng thái server + Neo4j connection |
 
 ---
 
-## Cau truc du an
+## Cấu trúc dự án
 
 ```
 app/
-  main.py                  # FastAPI app, khoi tao Neo4j indexes
+  main.py                  # FastAPI app, khởi tạo Neo4j indexes
   api/routes.py            # API endpoints
   core/
-    config.py              # Doc settings tu .env
-    document_loader.py     # PDF/DOCX -> danh sach chunks
-    graph_builder.py       # Build Hierarchical Lexical Graph vao Neo4j
+    config.py              # Đọc settings từ .env
+    document_loader.py     # PDF/DOCX -> danh sách chunks
+    graph_builder.py       # Build Hierarchical Lexical Graph vào Neo4j
     neo4j_store.py         # Neo4j CRUD, vector search, graph traversal
     rag_chain.py           # Query pipeline (embed -> search -> graph -> LLM)
-    providers.py           # Factory cho LLM va Embeddings
+    providers.py           # Factory cho LLM và Embeddings
 research/
-  01_pipeline_diagram.py   # Ve so do pipeline
-  02_timing_benchmark.py   # Do thoi gian thuc tung buoc
-  03_graph_visualization.py # Visualize knowledge graph tu Neo4j
-  04_embedding_similarity.py # Phan tich embedding space
-  05_architecture_comparison.py # So sanh Naive RAG vs Graph RAG
-  run_all.py               # Chay tat ca scripts
-figures/                   # Hinh anh duoc sinh ra boi research/
+  01_pipeline_diagram.py   # Vẽ sơ đồ pipeline
+  02_timing_benchmark.py   # Đo thời gian thực từng bước
+  03_graph_visualization.py # Visualize knowledge graph từ Neo4j
+  04_embedding_similarity.py # Phân tích embedding space
+  05_architecture_comparison.py # So sánh Naive RAG vs Graph RAG
+  run_all.py               # Chạy tất cả scripts
+figures/                   # Hình ảnh được sinh ra bởi research/
 requirements.txt
 ui.html                    # Chat UI
 ```
 
 ---
 
-## Research Scripts
+## Giới hạn
 
-Sau khi da upload it nhat 1 tai lieu va Neo4j dang chay:
-
-```bash
-python research/run_all.py
-```
-
-Sinh toan bo figures vao `figures/`:
-- `01_pipeline.png` — so do indexing va query pipeline
-- `02_timing.png` — benchmark thoi gian xu ly thuc te
-- `03_graph.png` — visualize knowledge graph tu Neo4j
-- `04_similarity.png` — phan tich embedding space va retrieval scores
-- `05_comparison.png` — so sanh kien truc Naive RAG vs Graph RAG
+- Upload file lớn với Ollama local rất chậm (~40s/section) — dùng Groq/OpenAI để nhanh hơn
+- Entity resolution dùng normalize cơ bản (lowercase + collapse whitespace), chưa có fuzzy matching
+- Chưa có community detection (Leiden/Louvain) như Microsoft GraphRAG gốc
+- Neo4j vector index yêu cầu Neo4j 5.11+
 
 ---
 
-## Gioi han
-
-- Upload file lon voi Ollama local rat cham (~40s/section) — dung Groq/OpenAI de nhanh hon
-- Entity resolution dung normalize co ban (lowercase + collapse whitespace), chua co fuzzy matching
-- Chua co community detection (Leiden/Louvain) nhu Microsoft GraphRAG goc
-- Neo4j vector index yeu cau Neo4j 5.11+
-
----
-
-## Tham khao
+## Tham khảo
 
 - [From Local to Global: A Graph RAG Approach](https://arxiv.org/abs/2404.16130) — Microsoft Research, 2024
 - [awslabs/graphrag-toolkit](https://github.com/awslabs/graphrag-toolkit) — Hierarchical Lexical Graph (Apache-2.0)
