@@ -1,16 +1,22 @@
 {
-  "file": "Email Writing Guidelines - Version 2025.pdf",
-  "chunks": 27,
-  "sections": 5,
+  "file": "2023_Ch6_7_8_10_Interview_Ajay Rathod - Guide To Clear Java Developer Interview_Contains 250+ Java, Spring-Boot, Microservice Interview Questions.pdf",
+  "file_size_kb": 1446.0,
+  "chunks": 936,
+  "sections": 156,
+  "llm_calls": 157,
+  "tokens_estimated": 117750,
+  "embed_dimension": 768,
   "timing_seconds": {
-    "Chunking": 0.565,
-    "Embedding": 14.291,
-    "Entity Extraction": 106.718,
-    "Section Summary": 11.399,
-    "Neo4j Write": 0.405
+    "Chunking": 1.113,
+    "Embedding (batch)": 17.814,
+    "LLM Extract (per section)": 39.869,
+    "LLM Extract (all sections, est.)": 6219.591,
+    "Doc Summary (1 LLM call)": 6.64,
+    "Neo4j Write (est.)": 11.232
   },
-  "total_seconds": 133.377,
-  "avg_chunk_length": 224.7,
-  "avg_entities_per_chunk": 1.0,
-  "avg_relations_per_chunk": 1.0
+  "total_seconds": 6256.39,
+  "avg_chunk_length": 628.3,
+  "avg_entities_per_section": 10.0,
+  "avg_relations_per_section": 9.2,
+  "llm_avg_time_per_section_s": 39.869
 }
