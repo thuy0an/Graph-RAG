@@ -1,0 +1,16 @@
+{
+  "file": "Email Writing Guidelines - Version 2025.pdf",
+  "chunks": 27,
+  "sections": 5,
+  "timing_seconds": {
+    "Chunking": 0.565,
+    "Embedding": 14.291,
+    "Entity Extraction": 106.718,
+    "Section Summary": 11.399,
+    "Neo4j Write": 0.405
+  },
+  "total_seconds": 133.377,
+  "avg_chunk_length": 224.7,
+  "avg_entities_per_chunk": 1.0,
+  "avg_relations_per_chunk": 1.0
+}

@@ -1,0 +1,27 @@
+# Core
+fastapi
+uvicorn
+langchain
+langchain-community
+langchain-core
+python-multipart
+pydantic
+pydantic-settings
+python-dotenv
+httpx
+
+# Document loaders
+pypdf
+docx2txt
+
+# Neo4j
+neo4j
+
+# LLM Providers (install only what you need)
+langchain-ollama
+langchain-openai
+langchain-groq
+langchain-anthropic
+langchain-huggingface
+langchain-text-splitters
+sentence-transformers

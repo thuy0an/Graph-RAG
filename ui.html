@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph RAG</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { background: #1e293b; padding: 16px 32px; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 12px; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; }
+    .badge { background: #0ea5e9; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; }
+
+    .container { display: grid; grid-template-columns: 320px 1fr; gap: 0; flex: 1; }
+
+    /* Sidebar */
+    .sidebar { background: #1e293b; border-right: 1px solid #334155; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    .sidebar h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; }
+
+    .upload-zone { border: 2px dashed #334155; border-radius: 10px; padding: 24px 16px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+    .upload-zone:hover, .upload-zone.drag { border-color: #38bdf8; background: #0f172a44; }
+    .upload-zone input { display: none; }
+    .upload-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-zone p { font-size: 0.85rem; color: #94a3b8; }
+    .upload-zone span { color: #38bdf8; font-weight: 600; }
+
+    .btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #0ea5e9; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #38bdf8; }
+
+    .file-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+    .file-item { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; }
+    .file-item .name { color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .file-item .meta { color: #64748b; font-size: 0.75rem; }
+    .file-item .del { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 1rem; padding: 0 4px; }
+    .file-item .del:hover { color: #fca5a5; }
+
+    .progress-wrap { display: none; background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; }
+    .progress-wrap.show { display: block; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .progress-label { font-size: 0.8rem; color: #94a3b8; flex: 1; }
+    .progress-pct { font-size: 0.8rem; font-weight: 700; color: #38bdf8; min-width: 36px; text-align: right; }
+    .progress-bar { height: 8px; background: #1e293b; border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #0ea5e9, #38bdf8); width: 0%; transition: width 0.4s ease; border-radius: 999px; }
+    .progress-stages { display: flex; gap: 4px; margin-top: 10px; }
+    .stage { flex: 1; height: 3px; border-radius: 999px; background: #1e293b; transition: background 0.3s; }
+    .stage.done { background: #0ea5e9; }
+    .stage.active { background: #38bdf8; animation: pulse-bar 1s infinite; }
+    @keyframes pulse-bar { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .stage-labels { display: flex; justify-content: space-between; margin-top: 5px; }
+    .stage-labels span { font-size: 0.65rem; color: #475569; flex: 1; text-align: center; }
+    .stage-labels span.active { color: #38bdf8; }
+    .stage-labels span.done { color: #0ea5e9; }
+
+    /* Chat */
+    .chat-area { display: flex; flex-direction: column; height: calc(100vh - 57px); }
+    .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+
+    .msg { max-width: 75%; display: flex; flex-direction: column; gap: 4px; }
+    .msg.user { align-self: flex-end; align-items: flex-end; }
+    .msg.bot { align-self: flex-start; align-items: flex-start; }
+    .msg .bubble { padding: 12px 16px; border-radius: 14px; font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .msg.user .bubble { background: #0ea5e9; color: #fff; border-bottom-right-radius: 4px; }
+    .msg.bot .bubble { background: #1e293b; color: #e2e8f0; border-bottom-left-radius: 4px; border: 1px solid #334155; }
+    .msg .sources { font-size: 0.75rem; color: #64748b; }
+    .msg .sources span { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 1px 6px; margin-right: 4px; }
+
+    .typing { display: flex; gap: 4px; align-items: center; padding: 12px 16px; background: #1e293b; border: 1px solid #334155; border-radius: 14px; border-bottom-left-radius: 4px; width: fit-content; }
+    .typing span { width: 7px; height: 7px; background: #64748b; border-radius: 50%; animation: bounce 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+    .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #475569; gap: 8px; }
+    .empty-state .icon { font-size: 3rem; }
+
+    .input-bar { padding: 16px 24px; border-top: 1px solid #334155; background: #1e293b; display: flex; gap: 10px; }
+    .input-bar textarea { flex: 1; background: #0f172a; border: 1px solid #334155; border-radius: 10px; color: #e2e8f0; padding: 10px 14px; font-size: 0.9rem; resize: none; outline: none; font-family: inherit; line-height: 1.5; max-height: 120px; }
+    .input-bar textarea:focus { border-color: #38bdf8; }
+    .input-bar textarea::placeholder { color: #475569; }
+    .send-btn { background: #0ea5e9; border: none; border-radius: 10px; color: #fff; width: 44px; height: 44px; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: background 0.2s; flex-shrink: 0; align-self: flex-end; }
+    .send-btn:hover:not(:disabled) { background: #38bdf8; }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 10px 18px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #16a34a; color: #fff; }
+    .toast.error { background: #dc2626; color: #fff; }
+
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Graph RAG</h1>
+  <div class="badge">Ollama + FAISS + GraphRetriever</div>
+</header>
+
+<div class="container">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div>
+      <h2>📄 Upload tài liệu</h2>
+    </div>
+
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".pdf,.doc,.docx" multiple />
+      <div class="icon">📂</div>
+      <p>Kéo thả hoặc <span>chọn file</span></p>
+      <p style="margin-top:4px;font-size:0.75rem;">PDF, DOC, DOCX</p>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">Đang xử lý...</div>
+    </div>
+
+    <div>
+      <h2 style="margin-bottom:10px;">📚 Tài liệu đã upload</h2>
+      <div class="file-list" id="fileList">
+        <div style="color:#475569;font-size:0.82rem;text-align:center;padding:12px;">Chưa có tài liệu</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Chat -->
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">🧠</div>
+        <div>Upload tài liệu và bắt đầu đặt câu hỏi</div>
+      </div>
+    </div>
+    <div class="input-bar">
+      <textarea id="questionInput" placeholder="Đặt câu hỏi về tài liệu..." rows="1"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQuery()}"
+        oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendQuery()" title="Gửi">➤</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = 'http://127.0.0.1:8000/api';
+
+  // --- Toast ---
+  function toast(msg, type = 'success') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `toast ${type} show`;
+    setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // --- Load files ---
+  async function loadFiles() {
+    try {
+      const res = await fetch(`${API}/files`);
+      const data = await res.json();
+      const list = document.getElementById('fileList');
+      if (!data.files.length) {
+        list.innerHTML = '<div style="color:#475569;font-size:0.82rem;text-align:center;padding:12px;">Chưa có tài liệu</div>';
+        return;
+      }
+      list.innerHTML = data.files.map(f => `
+        <div class="file-item">
+          <div>
+            <div class="name" title="${f.filename}">${f.filename}</div>
+            <div class="meta">${f.size_kb} KB</div>
+          </div>
+          <button class="del" onclick="deleteFile('${f.filename}')" title="Xóa">🗑</button>
+        </div>
+      `).join('');
+    } catch { }
+  }
+
+  // --- Delete file ---
+  async function deleteFile(filename) {
+    if (!confirm(`Xóa "${filename}"?`)) return;
+    await fetch(`${API}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    toast(`Đã xóa ${filename}`);
+    loadFiles();
+  }
+
+  // --- Upload ---
+  async function uploadFiles(files) {
+    if (!files.length) return;
+    const wrap = document.getElementById('progressWrap');
+    const fill = document.getElementById('progressFill');
+    const label = document.getElementById('progressLabel');
+    wrap.classList.add('show');
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      label.textContent = `Đang xử lý: ${file.name} (${i + 1}/${files.length})`;
+      fill.style.width = `${((i) / files.length) * 100}%`;
+
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const res = await fetch(`${API}/upload`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) { toast(data.detail || 'Lỗi upload', 'error'); continue; }
+        toast(`✅ ${file.name} — ${data.chunks} chunks, ${data.entities} entities`);
+      } catch {
+        toast(`Lỗi kết nối khi upload ${file.name}`, 'error');
+      }
+    }
+
+    fill.style.width = '100%';
+    label.textContent = 'Hoàn tất!';
+    setTimeout(() => wrap.classList.remove('show'), 1500);
+    loadFiles();
+    document.getElementById('fileInput').value = '';
+
+    // Tự động tóm tắt tài liệu vừa upload
+    await autoSummarize(files);
+  }
+
+  // --- Auto summarize after upload ---
+  async function autoSummarize(files) {
+    const names = files.map(f => f.name).join(', ');
+    const question = `Hãy tóm tắt nội dung chính của tài liệu vừa được tải lên.`;
+
+    addMessage('bot', `📄 Đã upload: ${names}\nĐang tóm tắt nội dung...`);
+    addTyping();
+
+    try {
+      const res = await fetch(`${API}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      removeTyping();
+      if (!res.ok) {
+        addMessage('bot', `⚠️ Không thể tóm tắt: ${data.detail || 'Lỗi không xác định'}`);
+      } else {
+        addMessage('bot', `📝 Tóm tắt tài liệu:\n\n${data.answer}`, data.sources);
+      }
+    } catch {
+      removeTyping();
+      addMessage('bot', '⚠️ Không thể tóm tắt tài liệu. Bạn có thể hỏi thủ công.');
+    }
+  }
+
+  // --- Drag & Drop ---
+  const zone = document.getElementById('dropZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); uploadFiles([...e.dataTransfer.files]); });
+  document.getElementById('fileInput').addEventListener('change', e => uploadFiles([...e.target.files]));
+
+  // --- Chat ---
+  function addMessage(role, text, sources = []) {
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.remove();
+
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    div.appendChild(bubble);
+
+    if (sources.length) {
+      const src = document.createElement('div');
+      src.className = 'sources';
+      src.innerHTML = '📎 ' + sources.map(s => `<span>${s}</span>`).join('');
+      div.appendChild(src);
+    }
+
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return div;
+  }
+
+  function addTyping() {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg bot';
+    div.id = 'typing';
+    div.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function removeTyping() {
+    document.getElementById('typing')?.remove();
+  }
+
+  async function sendQuery() {
+    const input = document.getElementById('questionInput');
+    const question = input.value.trim();
+    if (!question) return;
+
+    const sendBtn = document.getElementById('sendBtn');
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    addMessage('user', question);
+    addTyping();
+
+    try {
+      const res = await fetch(`${API}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      removeTyping();
+      if (!res.ok) {
+        addMessage('bot', `⚠️ ${data.detail || 'Có lỗi xảy ra'}`);
+      } else {
+        addMessage('bot', data.answer, data.sources);
+      }
+    } catch {
+      removeTyping();
+      addMessage('bot', '⚠️ Không thể kết nối đến server. Hãy chắc chắn server đang chạy.');
+    }
+
+    sendBtn.disabled = false;
+    input.focus();
+  }
+
+  loadFiles();
+</script>
+</body>
+</html>
