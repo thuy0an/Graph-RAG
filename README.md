@@ -182,13 +182,6 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=password
 ```
 
-Muốn nhanh hơn với file lớn, đổi sang Groq (miễn phí, cần API key tại console.groq.com):
-```env
-LLM_PROVIDER=groq
-GROQ_MODEL=llama-3.1-8b-instant
-GROQ_API_KEY=your_key_here
-```
-
 **4. Chạy:**
 ```bash
 .venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
