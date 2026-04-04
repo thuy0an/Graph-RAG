@@ -161,8 +161,23 @@ def link_entities(src_id: str, tgt_id: str, relation: str):
 
 # ── read helpers ──────────────────────────────────────────────────────────────
 
-def vector_search_chunks(embedding: list[float], k: int = 8) -> list[dict]:
-    """ANN search on Chunk.embedding using Neo4j vector index."""
+def vector_search_chunks(embedding: list[float], k: int = 8,
+                         doc_ids: list[str] | None = None) -> list[dict]:
+    """ANN search on Chunk.embedding using Neo4j vector index.
+    doc_ids: nếu có thì chỉ search trong các document được chỉ định.
+    """
+    if doc_ids:
+        # Lấy nhiều hơn rồi filter, vì vector index không hỗ trợ WHERE trực tiếp
+        rows = run(
+            """CALL db.index.vector.queryNodes('chunk_embedding', $k, $embedding)
+               YIELD node AS c, score
+               WHERE c.doc_id IN $doc_ids
+               RETURN c.id AS chunk_id, c.text AS text,
+                      c.doc_id AS doc_id, c.section_id AS section_id,
+                      c.index AS chunk_index, score""",
+            {"k": k * 5, "embedding": embedding, "doc_ids": doc_ids},
+        )
+        return rows[:k]
     return run(
         """CALL db.index.vector.queryNodes('chunk_embedding', $k, $embedding)
            YIELD node AS c, score

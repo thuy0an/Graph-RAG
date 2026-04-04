@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class QueryRequest(BaseModel):
     question: str
+    filenames: list[str] = []  # rỗng = query tất cả files
 
 
 class QueryResponse(BaseModel):

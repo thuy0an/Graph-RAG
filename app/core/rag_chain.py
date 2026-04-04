@@ -67,13 +67,14 @@ def _extract_query_entities(question: str) -> list[str]:
 
 # ── main query ────────────────────────────────────────────────────────────────
 
-def query(question: str) -> tuple[str, list[str]]:
+def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[str]]:
     t_total_start = time.perf_counter()
 
     print(f"\n{'='*60}")
     print(f"  QUERY PIPELINE")
     print(f"{'='*60}")
-    print(f"  Question: {question[:100]}")
+    print(f"  Question : {question[:100]}")
+    print(f"  Filter   : {filenames if filenames else 'all files'}")
 
     embed_model = get_embeddings()
 
@@ -83,9 +84,20 @@ def query(question: str) -> tuple[str, list[str]]:
     t_embed = time.perf_counter() - t0
     print(f"\n  [1/5] Embed question       ({t_embed*1000:.1f}ms)")
 
+    # Resolve filenames -> doc_ids filter
+    from app.core.neo4j_store import list_documents
+    all_docs = list_documents()
+    id_to_filename = {d["id"]: d["filename"] for d in all_docs}
+    filename_to_id = {d["filename"]: d["id"] for d in all_docs}
+
+    filter_doc_ids: list[str] | None = None
+    if filenames:
+        filter_doc_ids = [filename_to_id[f] for f in filenames if f in filename_to_id]
+        print(f"  Filter doc_ids : {filter_doc_ids}")
+
     # 2. Vector search
     t0 = time.perf_counter()
-    hits = vector_search_chunks(q_embedding, k=8)
+    hits = vector_search_chunks(q_embedding, k=8, doc_ids=filter_doc_ids)
     t_search = time.perf_counter() - t0
 
     if not hits:
@@ -152,9 +164,7 @@ def query(question: str) -> tuple[str, list[str]]:
     print(f"        Section summaries: {len(section_summaries)}")
     print(f"        Doc summaries    : {len(doc_summary_parts)}")
 
-    # Resolve source filenames
-    from app.core.neo4j_store import list_documents
-    id_to_filename = {d["id"]: d["filename"] for d in list_documents()}
+    # Resolve source filenames (dùng lại all_docs đã fetch)
     source_names = [id_to_filename.get(did, did) for did in doc_ids]
 
     # Build prompt & generate answer

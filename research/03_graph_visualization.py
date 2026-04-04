@@ -235,3 +235,273 @@ plt.tight_layout()
 plt.savefig("figures/03_graph.png", dpi=180, bbox_inches="tight",
             facecolor=fig.get_facecolor())
 print("Saved: figures/03_graph.png")
+
+
+# =============================================================================
+# DETAILED GRAPH ANALYSIS — sinh figures/03_graph_detailed.png
+# =============================================================================
+
+def plot_detailed_graph(G, degree, in_degree, out_degree, type_counts,
+                        rel_counts, top_nodes, doc_rows, BG, FG):
+    """
+    6 bieu do chi tiet hon:
+      (a) Top-20 entities by degree — horizontal bar
+      (b) In-degree vs Out-degree scatter — ai la "nguon" vs "dich"
+      (c) Top-15 relation types — tan suat cac loai quan he
+      (d) Entity co-occurrence heatmap — cap entity nao hay xuat hien cung
+      (e) Subgraph cua top-3 hub nodes — 3 ego graphs nho
+      (f) Graph connectivity stats — so lien ket thanh phan
+    """
+    print("\nGenerating detailed graph analysis...")
+
+    fig, axes = plt.subplots(2, 3, figsize=(24, 15))
+    fig.patch.set_facecolor(BG)
+    fig.suptitle(
+        f"Knowledge Graph — Detailed Analysis\n"
+        f"{len(G.nodes())} entities  {len(G.edges())} relations  {len(doc_rows)} document(s)",
+        color=FG, fontsize=14, fontweight="bold"
+    )
+
+    COLORS = ["#0ea5e9", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444",
+              "#ec4899", "#38bdf8", "#a78bfa", "#34d399", "#fbbf24"]
+
+    # ── (a) Top-20 entities by degree ────────────────────────────────────────
+    ax = axes[0, 0]
+    ax.set_facecolor(BG)
+    top20 = sorted(degree, key=degree.get, reverse=True)[:20]
+    top20_vals = [degree[n] for n in top20]
+    top20_in   = [in_degree[n] for n in top20]
+    top20_out  = [out_degree[n] for n in top20]
+    top20_labels = [n[:28] for n in top20]
+
+    y = np.arange(len(top20))
+    w = 0.35
+    ax.barh(y + w/2, top20_in,  w, label="In-degree",  color="#0ea5e9", edgecolor="#334155")
+    ax.barh(y - w/2, top20_out, w, label="Out-degree", color="#ec4899", edgecolor="#334155")
+    ax.set_yticks(y)
+    ax.set_yticklabels(top20_labels[::-1] if False else top20_labels,
+                       color=FG, fontsize=7.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Degree", color=FG, fontsize=9)
+    ax.set_title(
+        f"(a) Top-20 Entities by Degree\n"
+        f"In-degree = so lan duoc tham chieu  |  Out-degree = so quan he di ra",
+        color=FG, fontsize=10, fontweight="bold"
+    )
+    ax.tick_params(colors=FG)
+    ax.spines[:].set_color("#334155")
+    ax.legend(facecolor="#1e293b", edgecolor="#334155", labelcolor=FG, fontsize=8)
+    # annotate total degree
+    for i, (vi, vo) in enumerate(zip(top20_in, top20_out)):
+        ax.text(max(vi, vo) + 0.1, i, str(vi + vo),
+                va="center", color="#94a3b8", fontsize=7)
+
+    # ── (b) In-degree vs Out-degree scatter ───────────────────────────────────
+    ax = axes[0, 1]
+    ax.set_facecolor(BG)
+    all_in  = list(in_degree.values())
+    all_out = list(out_degree.values())
+    type_list = [G.nodes[n].get("etype", "OTHER") for n in G.nodes()]
+    clr_map = {"PERSON": "#0ea5e9", "ORG": "#10b981", "CONCEPT": "#8b5cf6",
+                "SKILL": "#f59e0b", "PLACE": "#ef4444", "OTHER": "#64748b"}
+    scatter_colors = [clr_map.get(t, "#64748b") for t in type_list]
+
+    ax.scatter(all_in, all_out, c=scatter_colors, alpha=0.6, s=40, edgecolors="#334155", lw=0.4)
+    # diagonal line: in == out
+    max_val = max(max(all_in), max(all_out)) + 1
+    ax.plot([0, max_val], [0, max_val], color="#475569", linestyle="--", lw=1, alpha=0.5)
+    # label top nodes
+    for n in top_nodes[:8]:
+        ax.annotate(n[:15], (in_degree[n], out_degree[n]),
+                    fontsize=6, color="#94a3b8",
+                    xytext=(3, 3), textcoords="offset points")
+    ax.set_xlabel("In-degree (so lan duoc tham chieu)", color=FG, fontsize=9)
+    ax.set_ylabel("Out-degree (so quan he di ra)", color=FG, fontsize=9)
+    ax.set_title(
+        "(b) In-degree vs Out-degree\n"
+        "Tren duong cheo = can bang  |  Duoi = hub nhan nhieu  |  Tren = hub phat nhieu",
+        color=FG, fontsize=10, fontweight="bold"
+    )
+    ax.tick_params(colors=FG)
+    ax.spines[:].set_color("#334155")
+    # legend
+    handles = [mpatches.Patch(color=c, label=t)
+               for t, c in clr_map.items() if type_counts.get(t, 0) > 0]
+    ax.legend(handles=handles, fontsize=7, facecolor="#1e293b",
+              edgecolor="#334155", labelcolor=FG)
+
+    # ── (c) Top-15 relation types ─────────────────────────────────────────────
+    ax = axes[0, 2]
+    ax.set_facecolor(BG)
+    top15_rel = rel_counts.most_common(15)
+    if top15_rel:
+        r_labels = [r[:25] for r, _ in top15_rel]
+        r_vals   = [c for _, c in top15_rel]
+        r_colors = [COLORS[i % len(COLORS)] for i in range(len(r_labels))]
+        bars = ax.barh(r_labels[::-1], r_vals[::-1], color=r_colors[::-1],
+                       edgecolor="#334155", height=0.65)
+        ax.set_xlabel("Count", color=FG, fontsize=9)
+        ax.set_title(
+            f"(c) Top-{len(top15_rel)} Relation Types\n"
+            f"Tong {len(rel_counts)} loai quan he khac nhau",
+            color=FG, fontsize=10, fontweight="bold"
+        )
+        ax.tick_params(colors=FG)
+        ax.spines[:].set_color("#334155")
+        for bar, val in zip(bars, r_vals[::-1]):
+            ax.text(val + 0.1, bar.get_y() + bar.get_height() / 2,
+                    str(val), va="center", color=FG, fontsize=8)
+
+    # ── (d) Co-occurrence heatmap (top-15 entities) ───────────────────────────
+    ax = axes[1, 0]
+    ax.set_facecolor(BG)
+    top15_nodes = top_nodes[:15]
+    n15 = len(top15_nodes)
+    cooc = np.zeros((n15, n15))
+    node_idx = {n: i for i, n in enumerate(top15_nodes)}
+
+    for u, v in G.edges():
+        if u in node_idx and v in node_idx:
+            i, j = node_idx[u], node_idx[v]
+            cooc[i][j] += 1
+            cooc[j][i] += 1  # symmetric
+
+    import matplotlib.colors as mcolors
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        "cooc", ["#0f172a", "#1e3a5f", "#0ea5e9", "#38bdf8"])
+    im = ax.imshow(cooc, cmap=cmap, aspect="auto")
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(colors=FG)
+    short_labels = [n[:14] for n in top15_nodes]
+    ax.set_xticks(range(n15))
+    ax.set_yticks(range(n15))
+    ax.set_xticklabels(short_labels, rotation=45, ha="right", color=FG, fontsize=6.5)
+    ax.set_yticklabels(short_labels, color=FG, fontsize=6.5)
+    ax.set_title(
+        "(d) Entity Co-occurrence (Top-15)\n"
+        "Mau sang = hai entity co nhieu quan he truc tiep voi nhau",
+        color=FG, fontsize=10, fontweight="bold"
+    )
+
+    # ── (e) Top-3 hub ego subgraphs ───────────────────────────────────────────
+    ax = axes[1, 1]
+    ax.set_facecolor(BG)
+    ax.axis("off")
+    ax.set_title(
+        "(e) Top-3 Hub Nodes — Ego Subgraphs (radius=1)\n"
+        "Moi hub hien thi cac entity ket noi truc tiep",
+        color=FG, fontsize=10, fontweight="bold"
+    )
+
+    hub_colors_list = ["#0ea5e9", "#10b981", "#f59e0b"]
+    sub_positions = [(0.18, 0.5), (0.5, 0.5), (0.82, 0.5)]
+    sub_radius    = 0.28
+
+    for hub_idx, (hub_node, hub_color, (cx, cy)) in enumerate(
+            zip(top_nodes[:3], hub_colors_list, sub_positions)):
+        ego1 = nx.ego_graph(G, hub_node, radius=1)
+        neighbors = [n for n in ego1.nodes() if n != hub_node][:8]
+        all_nodes  = [hub_node] + neighbors
+        n_neigh    = len(neighbors)
+
+        # draw hub
+        ax.add_patch(plt.Circle((cx, cy), 0.045, color=hub_color, zorder=3, alpha=0.9))
+        ax.text(cx, cy, hub_node[:12], ha="center", va="center",
+                fontsize=5.5, color="white", fontweight="bold", zorder=4)
+
+        # draw neighbors in circle
+        for j, nb in enumerate(neighbors):
+            angle = 2 * np.pi * j / max(n_neigh, 1)
+            nx_ = cx + sub_radius * 0.6 * np.cos(angle)
+            ny_ = cy + sub_radius * 0.6 * np.sin(angle)
+            nb_color = {"PERSON": "#0ea5e9", "ORG": "#10b981", "CONCEPT": "#8b5cf6",
+                        "SKILL": "#f59e0b", "PLACE": "#ef4444"}.get(
+                G.nodes[nb].get("etype", "OTHER"), "#64748b")
+            ax.plot([cx, nx_], [cy, ny_], color="#475569", lw=0.8, alpha=0.5, zorder=1)
+            ax.add_patch(plt.Circle((nx_, ny_), 0.028, color=nb_color, zorder=2, alpha=0.8))
+            ax.text(nx_, ny_, nb[:10], ha="center", va="center",
+                    fontsize=4.5, color="white", zorder=3)
+            # relation label
+            rel = G.edges.get((hub_node, nb), {}).get("relation", "")
+            if rel:
+                mx, my = (cx + nx_) / 2, (cy + ny_) / 2
+                ax.text(mx, my, rel[:10], ha="center", va="center",
+                        fontsize=4, color="#94a3b8", zorder=4)
+
+        ax.text(cx, cy - sub_radius * 0.75,
+                f"deg={degree[hub_node]}  neighbors={n_neigh}",
+                ha="center", va="center", fontsize=6.5, color=hub_color)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0.05, 0.95)
+
+    # ── (f) Connectivity & graph metrics ─────────────────────────────────────
+    ax = axes[1, 2]
+    ax.set_facecolor(BG)
+    ax.axis("off")
+    ax.set_title("(f) Graph Metrics & Connectivity", color=FG, fontsize=10, fontweight="bold")
+
+    # compute metrics
+    G_undirected = G.to_undirected()
+    components   = list(nx.connected_components(G_undirected))
+    largest_cc   = max(components, key=len)
+    G_lcc        = G_undirected.subgraph(largest_cc)
+
+    try:
+        avg_clustering = nx.average_clustering(G_undirected)
+    except Exception:
+        avg_clustering = 0.0
+
+    try:
+        avg_shortest = nx.average_shortest_path_length(G_lcc) if len(G_lcc) > 1 else 0
+    except Exception:
+        avg_shortest = 0.0
+
+    try:
+        diameter = nx.diameter(G_lcc) if len(G_lcc) > 1 else 0
+    except Exception:
+        diameter = 0
+
+    deg_vals_all = list(degree.values())
+    metrics = [
+        ("── Connectivity ──────", ""),
+        ("Components",        str(len(components))),
+        ("Largest CC size",   f"{len(largest_cc)} nodes ({len(largest_cc)/len(G.nodes())*100:.1f}%)"),
+        ("Density",           f"{nx.density(G):.5f}"),
+        ("── Path Metrics ──────", ""),
+        ("Avg shortest path", f"{avg_shortest:.3f}" if avg_shortest else "N/A"),
+        ("Diameter (LCC)",    str(diameter) if diameter else "N/A"),
+        ("── Clustering ────────", ""),
+        ("Avg clustering",    f"{avg_clustering:.4f}"),
+        ("── Degree Stats ──────", ""),
+        ("Min degree",        str(min(deg_vals_all))),
+        ("Max degree",        str(max(deg_vals_all))),
+        ("Mean degree",       f"{np.mean(deg_vals_all):.2f}"),
+        ("Std degree",        f"{np.std(deg_vals_all):.2f}"),
+        ("Nodes deg >= 5",    str(sum(1 for d in deg_vals_all if d >= 5))),
+        ("Nodes deg == 1",    str(sum(1 for d in deg_vals_all if d == 1))),
+        ("── Entity Types ──────", ""),
+    ] + [(f"  {t}", str(c)) for t, c in sorted(type_counts.items(), key=lambda x: -x[1])]
+
+    y_start = 0.97
+    row_h   = 0.052
+    for i, (label, value) in enumerate(metrics):
+        y = y_start - i * row_h
+        if y < 0.02:
+            break
+        is_sep = label.startswith("──")
+        ax.text(0.02, y, label, transform=ax.transAxes, fontsize=7.5,
+                color="#475569" if is_sep else "#94a3b8",
+                va="top", fontfamily="monospace")
+        if value:
+            ax.text(0.62, y, value, transform=ax.transAxes, fontsize=7.5,
+                    color="#38bdf8", va="top", fontfamily="monospace")
+
+    plt.tight_layout()
+    plt.savefig("figures/03_graph_detailed.png", dpi=180, bbox_inches="tight",
+                facecolor=fig.get_facecolor())
+    print("Saved: figures/03_graph_detailed.png")
+
+
+# Run detailed analysis
+plot_detailed_graph(G, degree, in_degree, out_degree, type_counts,
+                    rel_counts, top_nodes, doc_rows, BG, FG)

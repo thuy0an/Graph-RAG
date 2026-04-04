@@ -49,7 +49,9 @@ async def upload_file(file: UploadFile = File(...)):
 async def query_documents(request: QueryRequest):
     try:
         loop = asyncio.get_event_loop()
-        answer, sources = await loop.run_in_executor(None, rag_query, request.question)
+        answer, sources = await loop.run_in_executor(
+            None, rag_query, request.question, request.filenames or None
+        )
         return QueryResponse(answer=answer, sources=sources)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
