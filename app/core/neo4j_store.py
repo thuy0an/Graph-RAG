@@ -1,19 +1,19 @@
 """
-Neo4j graph store — Hierarchical Lexical Graph model.
+Neo4j graph store — Mô hình đồ thị phân cấp từ vựng (Hierarchical Lexical Graph).
 
-Node labels:
-  (:Document  {id, filename, summary, created_at})
-  (:Section   {id, doc_id, index, title, summary, text})
-  (:Chunk     {id, doc_id, section_id, index, text, embedding})
-  (:Entity    {id, name, type})
+Cấu trúc node:
+  (:Document  {id, filename, summary, created_at})  -- Tài liệu gốc
+  (:Section   {id, doc_id, index, title, summary, text})  -- Phần/chương trong tài liệu
+  (:Chunk     {id, doc_id, section_id, index, text, embedding})  -- Đoạn văn bản nhỏ
+  (:Entity    {id, name, type})  -- Thực thể được trích xuất (khái niệm, tên, ...)
 
-Relationships:
-  (Document)-[:HAS_SECTION]->(Section)
-  (Section)-[:HAS_CHUNK]->(Chunk)
-  (Section)-[:NEXT_SECTION]->(Section)
-  (Chunk)-[:NEXT_CHUNK]->(Chunk)
-  (Chunk)-[:MENTIONS]->(Entity)
-  (Entity)-[:RELATED_TO {relation}]->(Entity)
+Quan hệ giữa các node:
+  (Document)-[:HAS_SECTION]->(Section)      -- Tài liệu chứa các section
+  (Section)-[:HAS_CHUNK]->(Chunk)           -- Section chứa các chunk
+  (Section)-[:NEXT_SECTION]->(Section)      -- Liên kết tuần tự giữa các section
+  (Chunk)-[:NEXT_CHUNK]->(Chunk)            -- Liên kết tuần tự giữa các chunk
+  (Chunk)-[:MENTIONS]->(Entity)             -- Chunk đề cập đến thực thể nào
+  (Entity)-[:RELATED_TO {relation}]->(Entity)  -- Quan hệ giữa các thực thể
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from neo4j import GraphDatabase
 
 from app.core.config import settings
 
-# embedding dimensions per provider
+# Số chiều embedding tương ứng với từng model
 _EMBED_DIMS = {
     "nomic-embed-text": 768,
     "text-embedding-3-small": 1536,
@@ -34,6 +34,7 @@ _EMBED_DIMS = {
 
 @lru_cache(maxsize=1)
 def get_driver():
+    """Tạo và cache kết nối Neo4j driver (chỉ khởi tạo 1 lần duy nhất)."""
     return GraphDatabase.driver(
         settings.NEO4J_URI,
         auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
@@ -41,13 +42,16 @@ def get_driver():
 
 
 def run(query: str, params: dict | None = None) -> list[dict[str, Any]]:
+    """Thực thi một câu Cypher query và trả về danh sách kết quả dạng dict."""
     with get_driver().session() as session:
         result = session.run(query, params or {})
         return [dict(r) for r in result]
 
 
 def setup_indexes():
-    """Create constraints + vector index. Called once on startup."""
+    """Tạo các constraint và vector index cho Neo4j. Gọi một lần khi khởi động app."""
+
+    # Tạo unique constraint cho từng loại node để tránh trùng lặp
     constraints = [
         "CREATE CONSTRAINT doc_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
         "CREATE CONSTRAINT section_id IF NOT EXISTS FOR (s:Section) REQUIRE s.id IS UNIQUE",
@@ -58,15 +62,16 @@ def setup_indexes():
         try:
             run(stmt)
         except Exception:
-            pass
+            pass  # Bỏ qua nếu constraint đã tồn tại
 
-    # Determine embedding dimension from config
+    # Xác định số chiều embedding dựa theo provider được cấu hình
     dims = _EMBED_DIMS.get(settings.OLLAMA_EMBED_MODEL, 768)
     if settings.EMBED_PROVIDER == "openai":
         dims = _EMBED_DIMS.get(settings.OPENAI_EMBED_MODEL, 1536)
     elif settings.EMBED_PROVIDER == "huggingface":
         dims = _EMBED_DIMS.get(settings.HF_EMBED_MODEL, 384)
 
+    # Tạo vector index trên trường embedding của Chunk để hỗ trợ tìm kiếm ANN
     try:
         run(
             f"""CREATE VECTOR INDEX chunk_embedding IF NOT EXISTS
@@ -77,12 +82,13 @@ def setup_indexes():
                 }}}}"""
         )
     except Exception:
-        pass
+        pass  # Bỏ qua nếu index đã tồn tại
 
 
-# ── write helpers ─────────────────────────────────────────────────────────────
+# ── Các hàm ghi dữ liệu (write helpers) ──────────────────────────────────────
 
 def upsert_document(doc_id: str, filename: str, summary: str):
+    """Tạo mới hoặc cập nhật node Document trong đồ thị."""
     run(
         """MERGE (d:Document {id: $id})
            SET d.filename = $filename, d.summary = $summary,
@@ -93,6 +99,7 @@ def upsert_document(doc_id: str, filename: str, summary: str):
 
 def upsert_section(section_id: str, doc_id: str, index: int,
                    title: str, summary: str, text: str):
+    """Tạo mới hoặc cập nhật node Section, đồng thời liên kết với Document cha."""
     run(
         """MERGE (s:Section {id: $id})
            SET s.doc_id = $doc_id, s.index = $index,
@@ -106,6 +113,7 @@ def upsert_section(section_id: str, doc_id: str, index: int,
 
 
 def link_sections(prev_id: str, next_id: str):
+    """Tạo quan hệ NEXT_SECTION giữa 2 section liền kề nhau."""
     run(
         """MATCH (a:Section {id: $prev}), (b:Section {id: $next})
            MERGE (a)-[:NEXT_SECTION]->(b)""",
@@ -115,6 +123,7 @@ def link_sections(prev_id: str, next_id: str):
 
 def upsert_chunk(chunk_id: str, doc_id: str, section_id: str,
                  index: int, text: str, embedding: list[float]):
+    """Tạo mới hoặc cập nhật node Chunk (kèm embedding), đồng thời liên kết với Section cha."""
     run(
         """MERGE (c:Chunk {id: $id})
            SET c.doc_id = $doc_id, c.section_id = $section_id,
@@ -128,6 +137,7 @@ def upsert_chunk(chunk_id: str, doc_id: str, section_id: str,
 
 
 def link_chunks(prev_id: str, next_id: str):
+    """Tạo quan hệ NEXT_CHUNK giữa 2 chunk liền kề nhau."""
     run(
         """MATCH (a:Chunk {id: $prev}), (b:Chunk {id: $next})
            MERGE (a)-[:NEXT_CHUNK]->(b)""",
@@ -136,6 +146,7 @@ def link_chunks(prev_id: str, next_id: str):
 
 
 def upsert_entity(entity_id: str, name: str, etype: str = "CONCEPT"):
+    """Tạo mới hoặc cập nhật node Entity (thực thể như khái niệm, tên riêng, ...)."""
     run(
         """MERGE (e:Entity {id: $id})
            SET e.name = $name, e.type = $etype""",
@@ -144,6 +155,7 @@ def upsert_entity(entity_id: str, name: str, etype: str = "CONCEPT"):
 
 
 def link_chunk_entity(chunk_id: str, entity_id: str):
+    """Tạo quan hệ MENTIONS: chunk này đề cập đến entity nào."""
     run(
         """MATCH (c:Chunk {id: $cid}), (e:Entity {id: $eid})
            MERGE (c)-[:MENTIONS]->(e)""",
@@ -152,6 +164,7 @@ def link_chunk_entity(chunk_id: str, entity_id: str):
 
 
 def link_entities(src_id: str, tgt_id: str, relation: str):
+    """Tạo quan hệ RELATED_TO giữa 2 entity với nhãn quan hệ cụ thể."""
     run(
         """MATCH (a:Entity {id: $src}), (b:Entity {id: $tgt})
            MERGE (a)-[r:RELATED_TO {relation: $rel}]->(b)""",
@@ -159,15 +172,18 @@ def link_entities(src_id: str, tgt_id: str, relation: str):
     )
 
 
-# ── read helpers ──────────────────────────────────────────────────────────────
+# ── Các hàm đọc dữ liệu (read helpers) ───────────────────────────────────────
 
 def vector_search_chunks(embedding: list[float], k: int = 8,
                          doc_ids: list[str] | None = None) -> list[dict]:
-    """ANN search on Chunk.embedding using Neo4j vector index.
-    doc_ids: nếu có thì chỉ search trong các document được chỉ định.
+    """Tìm kiếm ANN (Approximate Nearest Neighbor) trên vector embedding của Chunk.
+
+    Sử dụng vector index của Neo4j để tìm k chunk gần nhất với embedding đầu vào.
+    doc_ids: nếu truyền vào thì chỉ tìm trong các document được chỉ định.
     """
     if doc_ids:
-        # Lấy nhiều hơn rồi filter, vì vector index không hỗ trợ WHERE trực tiếp
+        # Lấy nhiều hơn k rồi filter theo doc_ids,
+        # vì vector index không hỗ trợ WHERE trực tiếp
         rows = run(
             """CALL db.index.vector.queryNodes('chunk_embedding', $k, $embedding)
                YIELD node AS c, score
@@ -177,7 +193,9 @@ def vector_search_chunks(embedding: list[float], k: int = 8,
                       c.index AS chunk_index, score""",
             {"k": k * 5, "embedding": embedding, "doc_ids": doc_ids},
         )
-        return rows[:k]
+        return rows[:k]  # Cắt lại đúng k kết quả sau khi filter
+
+    # Tìm kiếm toàn bộ không giới hạn document
     return run(
         """CALL db.index.vector.queryNodes('chunk_embedding', $k, $embedding)
            YIELD node AS c, score
@@ -189,9 +207,13 @@ def vector_search_chunks(embedding: list[float], k: int = 8,
 
 
 def get_entity_subgraph_no_apoc(entity_names: list[str], depth: int = 2) -> list[str]:
-    """BFS traversal without APOC — pure Cypher up to depth 2."""
+    """Duyệt đồ thị entity theo BFS thuần Cypher (không dùng APOC), tối đa 2 bước.
+
+    Trả về danh sách các "fact" dạng chuỗi: 'A --[relation]--> B'.
+    """
     if not entity_names:
         return []
+
     results = run(
         """UNWIND $names AS name
            MATCH (e:Entity)-[r1:RELATED_TO]->(e2:Entity)
@@ -206,6 +228,8 @@ def get_entity_subgraph_no_apoc(entity_names: list[str], depth: int = 2) -> list
                ELSE null END AS fact2""",
         {"names": entity_names},
     )
+
+    # Dùng set để loại bỏ các fact trùng lặp
     facts: set[str] = set()
     for r in results:
         if r.get("fact1"):
@@ -216,6 +240,7 @@ def get_entity_subgraph_no_apoc(entity_names: list[str], depth: int = 2) -> list
 
 
 def get_section_summary_context(section_ids: list[str]) -> list[str]:
+    """Lấy tiêu đề và tóm tắt của các section theo danh sách id, sắp xếp theo thứ tự."""
     if not section_ids:
         return []
     results = run(
@@ -225,10 +250,12 @@ def get_section_summary_context(section_ids: list[str]) -> list[str]:
            ORDER BY s.index""",
         {"ids": section_ids},
     )
+    # Định dạng kết quả: "[Tiêu đề] Tóm tắt"
     return [f"[{r['title']}] {r['summary']}" for r in results if r.get("summary")]
 
 
 def get_document_summary(doc_id: str) -> str:
+    """Lấy tóm tắt của một document theo id. Trả về chuỗi rỗng nếu không tìm thấy."""
     results = run(
         "MATCH (d:Document {id: $id}) RETURN d.summary AS summary",
         {"id": doc_id},
@@ -237,6 +264,7 @@ def get_document_summary(doc_id: str) -> str:
 
 
 def list_documents() -> list[dict]:
+    """Lấy danh sách tất cả document, sắp xếp theo thời gian tạo mới nhất trước."""
     return run(
         """MATCH (d:Document)
            RETURN d.id AS id, d.filename AS filename,
@@ -246,7 +274,7 @@ def list_documents() -> list[dict]:
 
 
 def delete_document(doc_id: str):
-    """Delete document + all child nodes (sections, chunks). Orphan entities kept."""
+    """Xóa document và toàn bộ node con (section, chunk). Entity liên quan được giữ lại."""
     run(
         """MATCH (d:Document {id: $id})
            OPTIONAL MATCH (d)-[:HAS_SECTION]->(s)

@@ -1,13 +1,13 @@
 """
 Graph RAG query pipeline — Neo4j Hierarchical Lexical Graph.
 
-Query flow:
-  1. Extract entities from question (LLM)
-  2. Vector search → seed Chunks (Neo4j vector index)
-  3. Entity subgraph traversal → relation facts
-  4. Section summaries → hierarchical context
-  5. Document summary → global context
-  6. LLM answer generation
+Luồng xử lý câu hỏi:
+  1. Trích xuất entity từ câu hỏi (LLM)
+  2. Vector search → tìm các Chunk liên quan (Neo4j vector index)
+  3. Duyệt đồ thị entity → lấy các fact quan hệ
+  4. Lấy tóm tắt Section → context phân cấp
+  5. Lấy tóm tắt Document → context tổng thể
+  6. Sinh câu trả lời bằng LLM
 """
 from __future__ import annotations
 
@@ -23,14 +23,16 @@ from app.core.neo4j_store import (
     get_document_summary,
 )
 
-# ── prompts ───────────────────────────────────────────────────────────────────
+# ── Prompt templates ──────────────────────────────────────────────────────────
 
+# Prompt trích xuất entity từ câu hỏi của người dùng
 _ENTITY_EXTRACT_PROMPT = """List the key entities (people, organizations, concepts, skills, places) in this question.
 Return ONLY a JSON array, e.g. ["entity1", "entity2"]. If none, return [].
 
 Question: {question}
 Entities:"""
 
+# Prompt sinh câu trả lời cuối cùng, kết hợp nhiều nguồn context
 _ANSWER_PROMPT = """You are a helpful assistant. Answer the question using the context below.
 If the answer is not in the context, say "I don't have enough information."
 
@@ -51,11 +53,16 @@ Question: {question}
 Answer:"""
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── Hàm tiện ích ──────────────────────────────────────────────────────────────
 
 def _extract_query_entities(question: str) -> list[str]:
+    """Dùng LLM để trích xuất danh sách entity từ câu hỏi.
+
+    Trả về list string, hoặc list rỗng nếu không tìm thấy hoặc LLM lỗi.
+    """
     try:
         response = get_llm().invoke(_ENTITY_EXTRACT_PROMPT.format(question=question))
+        # Parse JSON array từ response (LLM có thể thêm text thừa xung quanh)
         match = re.search(r"\[.*?\]", response.content, re.DOTALL)
         if match:
             entities = json.loads(match.group())
@@ -65,9 +72,18 @@ def _extract_query_entities(question: str) -> list[str]:
     return []
 
 
-# ── main query ────────────────────────────────────────────────────────────────
+# ── Hàm query chính ───────────────────────────────────────────────────────────
 
 def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[str]]:
+    """Thực thi toàn bộ Graph RAG pipeline để trả lời câu hỏi.
+
+    Args:
+        question: Câu hỏi của người dùng
+        filenames: Danh sách tên file cần tìm kiếm; None = tìm trong tất cả
+
+    Returns:
+        Tuple (câu trả lời, danh sách tên file nguồn)
+    """
     t_total_start = time.perf_counter()
 
     print(f"\n{'='*60}")
@@ -78,24 +94,25 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
 
     embed_model = get_embeddings()
 
-    # 1. Embed question
+    # Bước 1: Embed câu hỏi thành vector
     t0 = time.perf_counter()
     q_embedding = embed_model.embed_query(question)
     t_embed = time.perf_counter() - t0
     print(f"\n  [1/5] Embed question       ({t_embed*1000:.1f}ms)")
 
-    # Resolve filenames -> doc_ids filter
+    # Resolve tên file → doc_id để filter khi search
     from app.core.neo4j_store import list_documents
     all_docs = list_documents()
     id_to_filename = {d["id"]: d["filename"] for d in all_docs}
     filename_to_id = {d["filename"]: d["id"] for d in all_docs}
 
+    # Chuyển danh sách filename thành doc_ids nếu có filter
     filter_doc_ids: list[str] | None = None
     if filenames:
         filter_doc_ids = [filename_to_id[f] for f in filenames if f in filename_to_id]
         print(f"  Filter doc_ids : {filter_doc_ids}")
 
-    # 2. Vector search
+    # Bước 2: Vector search tìm các chunk liên quan nhất
     t0 = time.perf_counter()
     hits = vector_search_chunks(q_embedding, k=8, doc_ids=filter_doc_ids)
     t_search = time.perf_counter() - t0
@@ -109,11 +126,11 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
         text_preview = h.get('text', '')[:55]
         print(f"        #{i+1}  score={score:.4f}  {text_preview!r}")
 
-    # 3. Dedupe and collect context
-    seen_chunks: set[str] = set()
-    doc_passages: list[str] = []
-    section_ids: set[str] = set()
-    doc_ids: set[str] = set()
+    # Bước 3: Thu thập context từ các chunk tìm được
+    seen_chunks: set[str] = set()   # Tránh trùng lặp chunk
+    doc_passages: list[str] = []    # Nội dung các chunk
+    section_ids: set[str] = set()   # ID các section chứa chunk
+    doc_ids: set[str] = set()       # ID các document chứa chunk
 
     for hit in hits:
         cid = hit.get("chunk_id") or hit.get("id", "")
@@ -133,7 +150,7 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
     print(f"        Sections found : {len(section_ids)}")
     print(f"        Documents found: {len(doc_ids)}")
 
-    # 4. Entity extraction + graph traversal
+    # Bước 4: Trích xuất entity từ câu hỏi và duyệt đồ thị quan hệ
     t0 = time.perf_counter()
     query_entities = _extract_query_entities(question)
     t_ent = time.perf_counter() - t0
@@ -150,7 +167,7 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
     if len(graph_facts) > 5:
         print(f"        ... (+{len(graph_facts)-5} more)")
 
-    # 5. Hierarchical context
+    # Bước 5: Lấy context phân cấp (section summary + document summary)
     t0 = time.perf_counter()
     section_summaries = get_section_summary_context(list(section_ids))
     doc_summary_parts: list[str] = []
@@ -164,10 +181,10 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
     print(f"        Section summaries: {len(section_summaries)}")
     print(f"        Doc summaries    : {len(doc_summary_parts)}")
 
-    # Resolve source filenames (dùng lại all_docs đã fetch)
+    # Resolve doc_id → tên file để trả về cho client
     source_names = [id_to_filename.get(did, did) for did in doc_ids]
 
-    # Build prompt & generate answer
+    # Ghép tất cả context vào prompt và gọi LLM sinh câu trả lời
     prompt = _ANSWER_PROMPT.format(
         doc_summary="\n\n".join(doc_summary_parts) or "N/A",
         section_context="\n".join(section_summaries) or "N/A",
@@ -176,7 +193,7 @@ def query(question: str, filenames: list[str] | None = None) -> tuple[str, list[
         question=question,
     )
 
-    prompt_tokens_est = len(prompt) // 4
+    prompt_tokens_est = len(prompt) // 4  # Ước tính số token (4 ký tự ≈ 1 token)
     print(f"\n  Prompt size: ~{prompt_tokens_est} tokens (est.)")
 
     t0 = time.perf_counter()

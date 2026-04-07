@@ -5,6 +5,11 @@ from langchain_core.embeddings import Embeddings
 
 @lru_cache(maxsize=1)
 def get_llm() -> BaseChatModel:
+    """Khởi tạo và cache LLM client dựa theo LLM_PROVIDER trong config.
+
+    Hỗ trợ: ollama (local), openai, groq, anthropic.
+    Chỉ khởi tạo một lần nhờ lru_cache, tái sử dụng cho mọi request.
+    """
     from app.core.config import settings
 
     provider = settings.LLM_PROVIDER.lower()
@@ -14,7 +19,7 @@ def get_llm() -> BaseChatModel:
         return ChatOllama(
             model=settings.OLLAMA_MODEL,
             base_url=settings.OLLAMA_BASE_URL,
-            temperature=0,
+            temperature=0,  # Deterministic output
         )
 
     if provider == "openai":
@@ -46,6 +51,11 @@ def get_llm() -> BaseChatModel:
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> Embeddings:
+    """Khởi tạo và cache Embeddings model dựa theo EMBED_PROVIDER trong config.
+
+    Hỗ trợ: ollama (local), openai, huggingface (local).
+    Chỉ khởi tạo một lần nhờ lru_cache, tái sử dụng cho mọi request.
+    """
     from app.core.config import settings
 
     provider = settings.EMBED_PROVIDER.lower()
